@@ -90,15 +90,20 @@ static void _as_audio_packet(struct usb_endpoint *ep) {
     uint16_t vol_mul = audio_state.vol_mul;
     int samples = usb_buffer->data_len / 2;
 
-    for (int i = 0; i < samples; i++)
-        out[i] = in[i];
+    // channels are swapped between in and out
+    // copy right channel
+    for (int i = 0; i < samples; i += 2)
+        out[i] = in[i+1];
+    // copy left channel
+    for (int i = 0; i < samples; i += 2)
+        out[i+1] = in[i];
 
     multicore_fifo_push_blocking(CORE0_READY);
     multicore_fifo_push_blocking(samples);
 
     for (int j = 0; j < FILTER_STAGES; j++) {
-        // Left channel filter
-        for (int i = 0; i < samples; i += 2) {
+        // Left channel filter, channels were swapped so left is odd indices
+        for (int i = 1; i < samples; i += 2) {
             fix16_t x_f16 = fix16_from_int((int16_t) out[i]);
 
             x_f16 = bqf_transform(x_f16, &bqf_filters_left[j],
@@ -137,7 +142,8 @@ void core1_entry() {
         uint32_t limit = multicore_fifo_pop_blocking();
 
         for (int j = 0; j < FILTER_STAGES; j++) {
-            for (int i = 1; i < limit; i += 2) {
+            // Right channel filter, channels were swapped so right is even indices
+            for (int i = 0; i < limit; i += 2) {
                 fix16_t x_f16 = fix16_from_int((int16_t) out[i]);
 
                 x_f16 = bqf_transform(x_f16, &bqf_filters_right[j],
